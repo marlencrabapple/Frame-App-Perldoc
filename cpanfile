@@ -18,7 +18,7 @@ const our %pinned => (
         'Path::Try'          => '0.01_03',
         'IO::Handle::Common' => '0.01_05',
         'IPC::Nosh'          => '0.01_04',
-        'Adjust::Params'     => '0.01_02',
+        'Adjust::Params'     => '0.01_04',
         'Frame'              => '0.01_7'
     }
 );

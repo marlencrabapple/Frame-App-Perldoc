@@ -1,9 +1,9 @@
 # carton snapshot format: version 1.0
 DISTRIBUTIONS
-  Adjust-Params-0.01_02-TRIAL
-    pathname: C/CR/CRABAPP/Adjust-Params-0.01_02-TRIAL.tar.gz
+  Adjust-Params-0.01_04-TRIAL
+    pathname: C/CR/CRABAPP/Adjust-Params-0.01_04-TRIAL.tar.gz
     provides:
-      Adjust::Params 0.01_02
+      Adjust::Params 0.01_04
     requirements:
       IO::Handle::Common 0.01_05
       List::Util 0

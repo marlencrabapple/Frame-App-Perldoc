@@ -2,6 +2,8 @@ use Object::Pad ':experimental(:all)';
 
 package Frame::App::Perldoc;
 
+our $VERSION = '0.01_1';
+
 class Frame::App::Perldoc : isa(Frame)
   : does(Frame::App::Perldoc::plenv);
 
@@ -198,3 +200,34 @@ method startup {
 
     $self;
 }
+
+=encoding utf-8
+
+=head1 NAME
+
+Frame::App::Perldoc - Blah blah blah
+
+=head1 SYNOPSIS
+
+  use Frame::App::Perldoc;
+
+=head1 DESCRIPTION
+
+Frame::App::Perldoc is
+
+=head1 AUTHOR
+
+Ian P Bradley E<lt>ian@pennyfoss.orgE<gt>
+
+=head1 COPYRIGHT
+
+Copyright 2026- Ian P Bradley
+
+=head1 LICENSE
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
+
+=head1 SEE ALSO
+
+=cut
