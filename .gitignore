@@ -1,0 +1,13 @@
+._*
+.DS_Store
+*.pem
+*.key
+*.toml
+*.tdy
+local/
+.carmel/
+.vscode/
+*.tar.gz
+Frame-App-Perldoc*
+*.log
+run/
