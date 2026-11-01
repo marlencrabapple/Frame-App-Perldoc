@@ -1,11 +1,12 @@
 # carton snapshot format: version 1.0
 DISTRIBUTIONS
-  Adjust-Params-0.01_04-TRIAL
-    pathname: C/CR/CRABAPP/Adjust-Params-0.01_04-TRIAL.tar.gz
+  Adjust-Params-0.01_06-TRIAL
+    pathname: C/CR/CRABAPP/Adjust-Params-0.01_06-TRIAL.tar.gz
     provides:
-      Adjust::Params 0.01_04
+      Adjust::Params 0.01_06
     requirements:
-      IO::Handle::Common 0.01_05
+      Const::Fast 0
+      IO::Handle::Common 0.01_06
       List::Util 0
       Module::Build::Tiny 0.035
       Object::Pad 0
@@ -1070,10 +1071,10 @@ DISTRIBUTIONS
     requirements:
       ExtUtils::MakeMaker 0
       perl 5.008001
-  Frame-0.01_7-TRIAL
-    pathname: C/CR/CRABAPP/Frame-0.01_7-TRIAL.tar.gz
+  Frame-0.01_08-TRIAL
+    pathname: C/CR/CRABAPP/Frame-0.01_08-TRIAL.tar.gz
     provides:
-      Frame 0.01_7
+      Frame 0.01_08
       Frame::App undef
       Frame::App::Media::Stream undef
       Frame::App::Paste undef
@@ -1430,10 +1431,10 @@ DISTRIBUTIONS
       Exporter 5.57
       ExtUtils::MakeMaker 0
       perl 5.008
-  IO-Handle-Common-0.01_05-TRIAL
-    pathname: C/CR/CRABAPP/IO-Handle-Common-0.01_05-TRIAL.tar.gz
+  IO-Handle-Common-0.01_06-TRIAL
+    pathname: C/CR/CRABAPP/IO-Handle-Common-0.01_06-TRIAL.tar.gz
     provides:
-      IO::Handle::Common 0.01_05
+      IO::Handle::Common 0.01_06
       IO::Handle::Common::Base undef
       IO::Handle::Common::Handle undef
     requirements:

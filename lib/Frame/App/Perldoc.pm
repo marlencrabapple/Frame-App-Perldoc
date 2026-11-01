@@ -4,8 +4,8 @@ package Frame::App::Perldoc;
 
 our $VERSION = '0.01_1';
 
-class Frame::App::Perldoc : isa(Frame)
-  : does(Frame::App::Perldoc::plenv);
+class Frame::App::Perldoc : isa(Frame) : does(Frame::Base)
+  : does(Frame::App::Perldoc::plenv) : does(Frame::App::Perldoc::PodPerldoc);
 
 use utf8;
 use v5.44;
@@ -15,18 +15,85 @@ use Path::Try;
 use IO::Handle::Common;
 use Text::Xslate;
 use List::Util qw'uniq';
-use Frame::App::Perldoc::PodPerldoc;
+use Syntax::Keyword::Defer;
+use URI::Escape 'uri_escape';
 
-field $app { $self->app };
 field $req;
 field $html = {};
 field $uribase;
-field $xs : reader = Text::Xslate->new( path => './view' );
-field $modlist_ord = [];
-field $modlist;
+field $xs : reader        = Text::Xslate->new( path => './view' );
+field $modlist_ord        = [];
+field $modlist : accessor = {};
 
 ADJUST {
-    dmsg $self
+    $self->update_modlist;
+}
+
+method update_module ( $pkgname, %opt ) {
+
+    # my $perldoc;
+    my $pod2html;
+
+    # my $htmlstr;
+    my $modinfo;
+
+    # try {
+    my $perldoc = $self->perldoc->module($pkgname);
+
+    # }
+    # catch ($e) {
+
+    # };
+
+    if (
+        !$perldoc->isa(
+            'Frame::App::Perldoc::PodPerldoc::__LEXCLASS__/PodPerldoc')
+      )
+    {
+        if ( $perldoc->isa('IPC::Nosh') ) {
+            error "Failed to get perldoc for $pkgname: " . join " ",
+              $perldoc->err->lines_utf8;
+
+        }
+        else {
+            dmsg $perldoc;
+            error
+              "Unknown error encountered trying to fetch perldoc for $pkgname";
+        }
+
+        return undef;
+    }
+
+    $modinfo = {
+        name => $pkgname,
+
+        # podhtml => $htmlstr,
+
+        # pod      => $perldoc->pod,
+        file    => $perldoc->file,
+        perldoc => $perldoc,
+
+        # pod2html => $pod2html
+        url => "$ENV{SITE_URL}/" . uri_escape("$pkgname")
+    };
+
+    if ( $opt{pod2html} ) {
+
+        $$modinfo{htmlstr} //= "";
+        $modinfo = {
+            %$modinfo,
+            $self->html( $perldoc->file, dest => \$$modinfo{htmlstr} )->%*
+        };
+    }
+
+    $$modlist{$pkgname} = $modinfo;
+    $modinfo;
+}
+
+method update_modlist (%opt) {
+    $self->update_module( $_, pod2html => $ENV{WARMUP_POD2HTML} )
+      for $self->plenv->list_modules;
+    @$modlist_ord = sort keys %$modlist;
 }
 
 method render( $template, $data, %opt ) {
@@ -46,54 +113,15 @@ method req {
 method modlist_page ($tx) {
     my $res = $tx->req->new_response(200);
 
-    foreach my ( $mod, $modinfo ) ( $modlist->%{@$modlist_ord} ) {
-        my $perldoc;
-        my $pod2html;
-        my $htmlstr;
-
-        const my $getmodinfo => sub ($mod) {
-            $perldoc  = $self->perldoc->module($mod);
-            $pod2html = $perldoc->html( dest => \$htmlstr );
-
-            $modinfo //= {
-                name     => $mod,
-                podhtml  => $htmlstr,
-                pod      => $perldoc->pod,
-                perldoc  => $perldoc,
-                pod2html => $pod2html
-
-                # version => $pod2html->get_version
-            };
-
-            foreach my $meth (
-                qw'get_author get_authors get_description get_short_title get_title get_title_short get_token get_version'
-              )
-            {
-                my ($field) = ( $meth =~ s/get_//rg );
-                $$modinfo{$field} = $pod2html->$meth;
-            }
-
-            dmsg $modinfo;
-
-            %$modinfo;
-        };
-
-        # push , $mod;
-        $$modlist{$mod} //=
-          { $getmodinfo->($mod), url => $tx->req->script_name . "/$mod" };
-
-        dmsg $$modlist{$mod};
-    }
-
-    $res->body(
-        $app->render(
-            'modlist.tx',
-            {
-                title   => 'Module Index',
-                modlist => [ $modlist->@{@$modlist_ord} ]
-            }
-        )
+    my $content = $self->app->render(
+        'modlist.tx',
+        {
+            title   => 'Module Index',
+            modlist => [ $modlist->@{@$modlist_ord} ]
+        }
     );
+
+    $res->body($content);
     $res;
 }
 
@@ -101,22 +129,22 @@ method perldoc_page( $tx, $name //= 'perl' ) {
     my $req = $tx->req;
     my $res = $req->new_response(200);
 
-    my $pod2html;    #= $self->perldoc->pod2html;
-
-    if ( !$$html{$name} ) {
-        $$html{$name} //= "";
-        $pod2html =
-          $self->perldoc->module($name)
-          ->html( dest => \( $modlist->{$name}{podhtml} ) );
+    if ( !$$modlist{$name} ) {
+        my $perlmod = $self->update_module($name);
     }
+
+    $modlist->{$name}{htmlstr} //= "";
+
+    my $modinfo = $self->html( $$modlist{$name}{perldoc}->file,
+        dest => \$$modlist{$name}{htmlstr} );
 
     $res->status(200);
 
-    my $body = $app->render(
+    my $body = $self->app->render(
         'module.tx',
         {
             $$modlist{$name}->%*,
-            htmlstr => Text::Xslate::mark_raw( $modlist->{$name}{podhtml} )
+            htmlstr => Text::Xslate::mark_raw( $$modlist{name}{htmlstr} )
         }
     );
 
@@ -128,13 +156,25 @@ method perl_index($tx) {
     $self->perldoc_page( $tx, 'perl' );
 }
 
-my class StaticSrv : isa(Plack::App::File) {
+my class StaticSrv : isa(Plack::App::File) : does(Adjust::Params) {
     use v5.44;
 
     use Path::Try;
     use IO::Handle::Common;
 
-    field $req;
+    field $req  : reader;
+    field $file : accessor //= undef;
+    field $root : accessor //= path('./');
+
+    ADJUST : params (%param) {
+        $self->adjust_params(
+            [ \$file, \$root ],
+            \%param,
+            cb => sub ($val) {
+                path($val)->absolute if $val;
+            }
+        );
+    };
 
     method get_path ($path) {
         fatal "Request field is not an instance of Plack::Request"
@@ -144,7 +184,7 @@ my class StaticSrv : isa(Plack::App::File) {
 
         if ( $path->is_file ) {
             $res->status(200);
-            $res->body( $path->openr_utf8 );
+            $res->body( $path->openr_raw );
         }
         else {
             $res->status(404);
@@ -154,30 +194,79 @@ my class StaticSrv : isa(Plack::App::File) {
         $res->finalize;
     }
 
-    method call ( $env, @arg ) {
+    method map_path ($path_info) {
 
-        $req = Plack::Request->new($env);
+        # dmsg $self, $path_info, $root, $file, $req;
+        if ($root) {
+            if (
+                my ($rel) =
+                $path_info eq '/'
+                ? '/'
+                : ( $path_info =~ /^\/(.*)$/g )
+              )
+            {
+                my $path =
+                  path( ( $rel =~ /\/$/g ? 'index.html' : $rel ) )
+                  ->relative($root);
 
-        if ( my ($rel) =
-            $req->path_info eq '/' ? '/' : ( $req->path_info =~ /^\/(.*)$/g ) )
-        {
-            my $path =
-              path(
-                "$$self{root}/" . ( $rel =~ /\/$/g ? 'index.html' : $rel ) );
-            return $self->get_path($path);
+                # dmsg $rel, $path;
+
+                return $self->get_path($path);
+            }
         }
+        else {
+            return $self->get_path( $file->absolute ) if $file;
+        }
+    }
 
-        Plack::App::File::call( $self, @_ );
+    method to_route {
+
+        sub ( $c, $path //= $c->req->path_info, @arg ) {
+
+            # dmsg $c->req->env, $path, \@arg;
+            $req = $c->req;
+            $self->get_path( $self->map_path($path) );
+
+            # $self->call( $c->env, @arg );
+        }
+    }
+
+    method call ( $env, @arg ) {
+        $req = Plack::Request->new($env);
+        $self->get_path( $self->map_path( $req->path_info ) );
+        Plack::App::File::call( $self, $env, @arg );
     }
 };
 
 method startup {
-    my $app = $self;
     my $r   = $self->routes;
+    my $app = $self->app;
 
-    $r->get( '/s' => StaticSrv->new( root => './static' )->to_app );
-    $r->get( '/s/bulma.min.css' =>
-          StaticSrv->new( file => './bulma/css/bulma.min.css' )->to_app );
+    $r->get( '/s/:path' => StaticSrv->new( root => './static' )->to_route );
+    $r->get(
+        '/s/bulma.min.css' => sub ( $c, @arg ) {
+            const my $static =>
+              StaticSrv->new( file => './inc/bulma/css/bulma.min.css' );
+
+            my $res = $c->req->new_response;
+            $res->status(200);
+            $res->body( $static->file->openr_raw );
+            $res;
+        }
+    );
+
+    $r->get(
+        'favicon.ico' => sub ( $c, @arg ) {
+            const my $static =>
+              StaticSrv->new( file => './static/favicon.ico' );
+
+            my $res = $c->req->new_response;
+            $res->status(200);
+            $res->body( $static->file->openr_raw );
+            $res;
+        }
+    );
+
     my $doc = $r->under(
         '/' => sub ( $self, @arg ) {
             $uribase = $self->req->script_name;

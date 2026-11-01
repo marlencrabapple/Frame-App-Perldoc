@@ -4,13 +4,13 @@
       "Ian P Bradley <ian@pennyfoss.org>"
    ],
    "dynamic_config" : 0,
-   "generated_by" : "Minilla/v3.1.29, CPAN::Meta::Converter version 2.150013",
+   "generated_by" : "Minilla/v3.3.2",
    "license" : [
       "perl_5"
    ],
    "meta-spec" : {
       "url" : "http://search.cpan.org/perldoc?CPAN::Meta::Spec",
-      "version" : 2
+      "version" : "2"
    },
    "name" : "Frame-App-Perldoc",
    "no_index" : {
@@ -42,15 +42,18 @@
       },
       "runtime" : {
          "requires" : {
-            "Adjust::Params" : "0.01_04",
+            "Adjust::Params" : "0.01_06",
             "Const::Fast" : "0",
-            "Frame" : "0.01_7",
-            "IO::Handle::Common" : "0.01_05",
+            "Frame" : "0.01_08",
+            "IO::Handle::Common" : "0.01_06",
             "IPC::Nosh" : "0.01_04",
             "JSON::MaybeXS" : "0",
             "Path::Try" : "0.01_03",
+            "Plack::Runner" : "0",
+            "Pod::Perldoc" : "0",
             "Pod::Simple" : "0",
             "TOML::Tiny" : "0",
+            "URI::Escape" : "0",
             "perl" : "v5.44.0"
          }
       }

@@ -1,3 +1,6 @@
 [submodule "inc/bulma"]
 	path = inc/bulma
 	url = https://github.com/jgthms/bulma
+[submodule "inc/cgit"]
+	path = inc/cgit
+	url = https://git.zx2c4.com/cgit

@@ -14,6 +14,7 @@ my class plenv {
     use Const::Fast;
     use IPC::Nosh;
     use IO::Handle::Common;
+    use List::Util 'any';
 
     use vars qw'@commands';
 
@@ -41,6 +42,8 @@ my class plenv {
         my ( $class, $meth ) = ( $AUTOLOAD =~ /^(.*)::(.+)$/ );
         my $cmd = ( $meth =~ s/_/-/gr );
 
+        return unless any { $cmd eq $_ } @commands;
+
         my @cmd    = ( 'plenv', $cmd, @arg );
         my $cmdstr = join ' ', @cmd;
 
@@ -48,11 +51,11 @@ my class plenv {
             \@cmd,
             out => sub ( $line, @ ) {
 
-                info("$cmdstr: $line [STDOUT]") if $debug;
+                info("$cmdstr: $line [STDOUT]") if $debug == 2;
             },
             err => sub ( $line, @ ) {
 
-                error("$cmdstr: $line [STDERR]") if $debug;
+                error("$cmdstr: $line [STDERR]") if $debug == 2;
             },
             autochomp => 1
         );

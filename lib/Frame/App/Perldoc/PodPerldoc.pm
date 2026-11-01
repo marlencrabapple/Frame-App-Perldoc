@@ -2,30 +2,74 @@ use Object::Pad ':experimental(:all)';
 
 package Frame::App::Perldoc::PodPerldoc;
 
-class Frame::App::Perldoc::PodPerldoc : does(Frame::App::Perldoc::Base);
+role Frame::App::Perldoc::PodPerldoc : does(Frame::App::Perldoc::Base);
 
 use v5.44;
 
-use Pod::Perldoc;
 use Pod::Simple::HTML;
 use IO::Handle::Common;
-use Capture::Tiny qw'capture';
+use Path::Try;
 use Syntax::Keyword::Try;
 use Syntax::Keyword::Dynamically;
 
-field $pod2html;
-field $pod     : reader : param;
-field $poderr  : reader : param;
-field $podret  : reader : param;
-field $perldoc : reader : param;
+my class PodPerldoc {
 
-ADJUST {
-    $pod2html = $self->pod2html;
+    use Pod::Perldoc;
+    use Path::Try;
+    use IO::Handle::Common;
+    use IPC::Nosh;
+    use Syntax::Keyword::Try;
+
+    field $file : reader : param;
+    field $pod;
+    field $poderr : reader : param;
+
+    ADJUST {
+        $file = path($file)->absolute;
+        $pod  = $file->slurp_utf8;
+    }
+
+    method module : common ($name) {
+        my $htmlstr;
+        my $_perldoc;
+
+        my @cmd    = ( qw'perldoc -T -l', $name );
+        my $cmdstr = join " ", \@cmd;
+        my $run    = run(
+            \@cmd,
+            autochomp => 1,
+            out       => sub ( $line, @ ) {
+
+                info("$cmdstr: $line [STDOUT]") if $ENV{DEBUG} == 2;
+            },
+            err => sub ( $line, @ ) {
+
+                error("$cmdstr: $line [STDERR]") if $ENV{DEBUG} == 2;
+            }
+        );
+
+        if ( $run->status > 0 ) {
+            dmsg $run;
+
+            return $run;
+        }
+
+        $class->new(
+            module => $name,
+            file   => path( ( $run->out->lines_utf8 )[0] )->absolute,
+            poderr => [ $run->err->lines_utf8 ],
+        );
+    }
 };
 
-method pod2html (%opt) {
-    dynamically $pod2html = Pod::Simple::HTML->new
-      if $opt{new} || !$pod2html;
+method perldoc {
+    PodPerldoc;
+}
+
+method pod2html ( $file, %opt ) {
+    my $pod2html = Pod::Simple::HTML->new;
+    $pod2html->set_source($file);
+
     $pod2html->perldoc_url_prefix( $opt{url_prefix}   // "/" );
     $pod2html->bare_output( $opt{bare_output}         // 1 );
     $pod2html->index( $opt{index}                     // 1 );
@@ -33,34 +77,26 @@ method pod2html (%opt) {
     $pod2html;
 }
 
-method html (%opt) {
-    my $dest = "";
-    $opt{dest} //= \$dest;
+method html ( $file, %opt ) {
+    my %modinfo = ();
+    $modinfo{htmlstr} = "";
+
+    $opt{dest} //= \$modinfo{htmlstr};
+
+    my $pod2html = $self->pod2html( path($file)->absolute->openr_utf8 );
+
     $pod2html->output_string( $opt{dest} );
-    $pod2html->set_source( \$pod );
     $pod2html->run;
-    $opt{dest} == \$dest ? $dest : $pod2html;
-}
 
-method module : common ($name) {
-    my $htmlstr;
-    my $_perldoc;
+    foreach my $meth (
+        qw'get_author get_authors get_description get_short_title get_title get_title_short get_token get_version'
+      )
+    {
+        my ($field) = ( $meth =~ s/get_//rg );
+        $modinfo{$field} = $pod2html->$meth;
+    }
 
-    my ( $stdout, $stderr, @ret ) = capture sub {
-        try {
-            local @ARGV = ( qw'-T -u', $name );
-            $_perldoc = Pod::Perldoc->run;
-        }
-        catch ($e) {
-            error $e;
-        }
-    };
+    $modinfo{pod2html} = $pod2html;
 
-    $class->new(
-        module  => $name,
-        pod     => $stdout,
-        poderr  => $stderr,
-        podret  => \@ret,
-        perldoc => $_perldoc
-    );
+    \%modinfo;
 }
