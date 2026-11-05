@@ -191,7 +191,7 @@ my class StaticSrv : isa(Plack::App::File) : does(Adjust::Params) {
             $res->body('404 - File not found');
         }
 
-        $res->finalize;
+        $res;
     }
 
     method map_path ($path_info) {
@@ -208,8 +208,6 @@ my class StaticSrv : isa(Plack::App::File) : does(Adjust::Params) {
                 my $path =
                   path( ( $rel =~ /\/$/g ? 'index.html' : $rel ) )
                   ->relative($root);
-
-                # dmsg $rel, $path;
 
                 return $self->get_path($path);
             }
