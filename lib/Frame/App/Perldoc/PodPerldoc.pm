@@ -29,7 +29,7 @@ my class PodPerldoc {
         $pod  = $file->slurp_utf8;
     }
 
-    method module : common ($name) {
+    method module : common ($name, %opt) {
         my $htmlstr;
         my $_perldoc;
 
@@ -39,18 +39,17 @@ my class PodPerldoc {
             \@cmd,
             autochomp => 1,
             out       => sub ( $line, @ ) {
-
-                info("$cmdstr: $line [STDOUT]") if $ENV{DEBUG} == 2;
+                info("$cmdstr: $line [STDOUT]")
+                  if ( $opt{debug} // $ENV{DEBUG} ) == 2;
             },
             err => sub ( $line, @ ) {
-
-                error("$cmdstr: $line [STDERR]") if $ENV{DEBUG} == 2;
+                error("$cmdstr: $line [STDERR]")
+                  if ( $opt{debug} // $ENV{DEBUG} ) == 2;
             }
         );
 
         if ( $run->status > 0 ) {
             dmsg $run;
-
             return $run;
         }
 
@@ -68,7 +67,7 @@ method perldoc {
 
 method pod2html ( $file, %opt ) {
     my $pod2html = Pod::Simple::HTML->new;
-    $pod2html->set_source($file);
+    $pod2html->set_source( $file->openr_utf8 );
 
     $pod2html->perldoc_url_prefix( $opt{url_prefix}   // "/" );
     $pod2html->bare_output( $opt{bare_output}         // 1 );
@@ -81,11 +80,9 @@ method html ( $file, %opt ) {
     my %modinfo = ();
     $modinfo{htmlstr} = "";
 
-    $opt{dest} //= \$modinfo{htmlstr};
+    my $pod2html = $self->pod2html( path($file)->absolute );
 
-    my $pod2html = $self->pod2html( path($file)->absolute->openr_utf8 );
-
-    $pod2html->output_string( $opt{dest} );
+    $pod2html->output_string( \$modinfo{htmlstr} );
     $pod2html->run;
 
     foreach my $meth (

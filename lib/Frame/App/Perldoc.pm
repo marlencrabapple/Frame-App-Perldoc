@@ -17,7 +17,10 @@ use Text::Xslate;
 use List::Util qw'uniq';
 use Syntax::Keyword::Defer;
 use URI::Escape 'uri_escape';
+use JSON::MaybeXS;
+use Digest::SHA;
 
+field $json = JSON::MaybeXS->new( { utf8 => 1 } );
 field $req;
 field $html = {};
 field $uribase;
@@ -25,75 +28,196 @@ field $xs : reader        = Text::Xslate->new( path => './view' );
 field $modlist_ord        = [];
 field $modlist : accessor = {};
 
+field $cachedir;
+ADJUST : params (%param) {
+    $cachedir = path(
+            $param{cachedir} // $ENV{CACHEDIR} // '._'
+          . ( __PACKAGE__ =~ s/::/-/rg )
+          . '-cache-'
+          . Frame::Base::epoch
+    );
+    $cachedir->mkdir unless $cachedir->is_dir;
+};
+
 ADJUST {
-    $self->update_modlist;
+    $self->load_cache if path("$cachedir/modlist.json");
+    $self->update_modlist( update => 1 );
+}
+
+my method modinfo_clean ($modinfo) {
+
+    my %modinfo =
+      ( $modinfo->%{ grep { $_ !~ /perldoc|pod2html/ } keys $modinfo->%* } );
+
+    $modinfo{file} = "$modinfo{file}" if $modinfo{file};
+
+    $modinfo{cksum}{self} = Digest::SHA::sha256_hex(
+        $json->encode( [ map { ( $_ => $modinfo{$_} ) } sort keys %modinfo ] )
+    );
+
+    # dmsg \%modinfo;
+
+    \%modinfo;
+}
+
+method load_cache (%opt) {
+    my $path = path("$cachedir/modlist.json");
+    return undef unless $path->is_file;
+
+    my $json = $json->decode( $path->slurp_utf8 );
+
+    foreach my ( $pkgname, $modinfo ) (%$json) {
+        $$modinfo{file} = path( $$modinfo{file} ) if $$modinfo{file};
+        my $cachefile = path("$cachedir/$$modinfo{cksum}.html");
+        next unless $cachefile->is_file;
+
+        if ( my $htmlcache = $cachefile->slurp_utf8 ) {
+            if ( $$modinfo{cksum} eq $htmlcache->digest ) {
+                $$modinfo{modified} = $htmlcache->stat->mtime;
+                $$modinfo{created}  = $htmlcache->stat->ctime;
+                $$modinfo{htmlstr}  = $htmlcache->slurp_utf8;
+
+            }
+            else {
+                $htmlcache->remove;
+                error "HTML cache for $pkgname has an invalid checksum!\n"
+                  . "(Expected: $$modinfo{cksum}\n"
+                  . " Got: "
+                  . $htmlcache->digest . ')';
+
+                dmsg $pkgname, $modinfo, $htmlcache;
+            }
+
+        }
+    }
 }
 
 method update_module ( $pkgname, %opt ) {
+    $self->get_module( $pkgname, update => true, %opt );
+}
 
-    # my $perldoc;
+method get_module ( $pkgname, %opt ) {
+    ( $opt{update_html} = $opt{update_perldoc} ) //= $opt{write_html} //=
+      $opt{update_html} //= $opt{update_perldoc} //= $opt{update} //=
+      !$ENV{NO_CACHE} // false;
+
     my $pod2html;
+    my $modinfo = $$modlist{$pkgname} // {};
 
-    # my $htmlstr;
-    my $modinfo;
+    if ( $opt{update_perldoc} || !$$modinfo{file} ) {
+        my $perldoc = $self->perldoc->module( $pkgname, %opt );
 
-    # try {
-    my $perldoc = $self->perldoc->module($pkgname);
+        if (
+            !$perldoc->isa(
+                'Frame::App::Perldoc::PodPerldoc::__LEXCLASS__/PodPerldoc')
+          )
+        {
+            if ( $perldoc->isa('IPC::Nosh') ) {
+                error "Failed to get perldoc for $pkgname: " . join " ",
+                  $perldoc->err->lines_utf8;
 
-    # }
-    # catch ($e) {
+            }
+            else {
+                error
+"Unknown error encountered trying to fetch perldoc for $pkgname";
+            }
 
-    # };
-
-    if (
-        !$perldoc->isa(
-            'Frame::App::Perldoc::PodPerldoc::__LEXCLASS__/PodPerldoc')
-      )
-    {
-        if ( $perldoc->isa('IPC::Nosh') ) {
-            error "Failed to get perldoc for $pkgname: " . join " ",
-              $perldoc->err->lines_utf8;
-
-        }
-        else {
-            dmsg $perldoc;
-            error
-              "Unknown error encountered trying to fetch perldoc for $pkgname";
+            return undef;
         }
 
-        return undef;
-    }
-
-    $modinfo = {
-        name => $pkgname,
-
-        # podhtml => $htmlstr,
-
-        # pod      => $perldoc->pod,
-        file    => $perldoc->file,
-        perldoc => $perldoc,
-
-        # pod2html => $pod2html
-        url => "$ENV{SITE_URL}/" . uri_escape("$pkgname")
-    };
-
-    if ( $opt{pod2html} ) {
-
-        $$modinfo{htmlstr} //= "";
         $modinfo = {
             %$modinfo,
-            $self->html( $perldoc->file, dest => \$$modinfo{htmlstr} )->%*
+            name    => $pkgname,
+            file    => $perldoc->file,
+            cksum   => { file => $perldoc->file->digest },
+            perldoc => $perldoc,
+            url     => "$ENV{SITE_URL}/" . uri_escape("$pkgname")
         };
     }
 
-    $$modlist{$pkgname} = $modinfo;
+    if (
+        $opt{pod2html}
+        && (
+            $opt{update_html}
+            || (  !$$modinfo{htmlstr}
+                || $$modinfo{htmlstr} eq '' )
+        )
+      )
+    {
+
+        $$modinfo{htmlstr} //= "";
+        $modinfo = { %$modinfo, $self->html( $$modinfo{file} )->%* };
+
+        $$modinfo{cksum}{html} =
+          Digest::SHA::sha256_hex( delete $$modinfo{htmlstr} )
+          if $$modinfo{htmlstr};
+    }
+
+    my $modified;
+
+    if ( my $modinfo_curr = $$modlist{$pkgname} ) {
+        my $modinfo_clean = modinfo_clean( $self, $modinfo );
+
+        if (  !$$modinfo_curr{cksum}
+            || $$modinfo_curr{cksum} ne $$modinfo_clean{cksum} )
+        {
+            $$modlist{$pkgname} = $modinfo
+              if $opt{update_modlist}
+              || ( !defined $opt{update_modlist} || $opt{update_modlist} );
+
+            $modified = $modinfo_clean;
+        }
+
+    }
+    else {
+        $modified = modinfo_clean( $self, $modinfo );
+        $$modlist{$pkgname} = $modinfo;
+    }
+
+    # dmsg $modified, \%opt;
+
+    if ($modified) {
+        $self->write_mod_cache( $pkgname, update => 1 )
+          if $opt{write_html};
+        $self->write_cache_index if $opt{write_modlist};
+    }
+
     $modinfo;
 }
 
 method update_modlist (%opt) {
-    $self->update_module( $_, pod2html => $ENV{WARMUP_POD2HTML} )
-      for $self->plenv->list_modules;
+    my $write_modlist = delete $opt{write_modlist} // 1;
+    $self->update_module(
+        $_,
+        pod2html => $ENV{WARMUP_POD2HTML},
+        ( $opt{update} ? ( update_modlist => 1 ) : () ),
+        ( write_modlist => !$write_modlist ), %opt
+    ) for $self->plenv->list_modules;
+
     @$modlist_ord = sort keys %$modlist;
+
+    $self->write_cache_index if $write_modlist;
+}
+
+method write_cache_index (%opt) {
+    path("$cachedir/modlist.json")->spew_utf8(
+        $json->encode(
+            {
+                map { ( $_ => modinfo_clean( $self, $$modlist{$_} ) ) }
+                  keys %$modlist
+            }
+        )
+    );
+}
+
+method write_mod_cache ( $pkgname, %opt ) {
+    my $modinfo       = $$modlist{$pkgname};
+    my $modinfo_clean = modinfo_clean( $self, $$modlist{$pkgname} );
+
+    path("$cachedir/$$modinfo_clean{cksum}.html")
+      ->spew_utf8( $$modinfo{htmlstr} )
+      if $$modinfo{htmlstr};
+
 }
 
 method render( $template, $data, %opt ) {
@@ -126,25 +250,16 @@ method modlist_page ($tx) {
 }
 
 method perldoc_page( $tx, $name //= 'perl' ) {
-    my $req = $tx->req;
-    my $res = $req->new_response(200);
-
-    if ( !$$modlist{$name} ) {
-        my $perlmod = $self->update_module($name);
-    }
-
-    $modlist->{$name}{htmlstr} //= "";
-
-    my $modinfo = $self->html( $$modlist{$name}{perldoc}->file,
-        dest => \$$modlist{$name}{htmlstr} );
+    my $req     = $tx->req;
+    my $res     = $req->new_response(200);
+    my $modinfo = $self->update_module( $name, pod2html => 1 );
 
     $res->status(200);
 
     my $body = $self->app->render(
         'module.tx',
         {
-            $$modlist{$name}->%*,
-            htmlstr => Text::Xslate::mark_raw( $$modlist{name}{htmlstr} )
+            %$modinfo, htmlstr => Text::Xslate::mark_raw( $$modinfo{htmlstr} )
         }
     );
 
@@ -195,8 +310,6 @@ my class StaticSrv : isa(Plack::App::File) : does(Adjust::Params) {
     }
 
     method map_path ($path_info) {
-
-        # dmsg $self, $path_info, $root, $file, $req;
         if ($root) {
             if (
                 my ($rel) =
