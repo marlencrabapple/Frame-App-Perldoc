@@ -29,6 +29,7 @@ field $modlist_ord        = [];
 field $modlist : accessor = {};
 
 field $cachedir;
+
 ADJUST : params (%param) {
     $cachedir = path(
             $param{cachedir} // $ENV{CACHEDIR} // '._'
@@ -37,10 +38,10 @@ ADJUST : params (%param) {
           . Frame::Base::epoch
     );
     $cachedir->mkdir unless $cachedir->is_dir;
+    $self->load_cache if path("$cachedir/modlist.json");
 };
 
 ADJUST {
-    $self->load_cache if path("$cachedir/modlist.json");
     $self->update_modlist( update => 1 );
 }
 
@@ -145,7 +146,7 @@ method get_module ( $pkgname, %opt ) {
       )
     {
 
-        $$modinfo{htmlstr} //= "";
+        # $$modinfo{htmlstr} //= "";
         $modinfo = { %$modinfo, $self->html( $$modinfo{file} )->%* };
 
         $$modinfo{cksum}{html} =
@@ -250,9 +251,11 @@ method modlist_page ($tx) {
 }
 
 method perldoc_page( $tx, $name //= 'perl' ) {
-    my $req     = $tx->req;
-    my $res     = $req->new_response(200);
+    my $req = $tx->req;
+    my $res = $req->new_response(200);
+
     my $modinfo = $self->update_module( $name, pod2html => 1 );
+    $$modinfo{htmlstr} ||= $modinfo->{pod2html}{output_string}->$*;
 
     $res->status(200);
 

@@ -33,7 +33,7 @@ my class PodPerldoc {
         my $htmlstr;
         my $_perldoc;
 
-        my @cmd    = ( qw'perldoc -T -l', $name );
+        my @cmd    = ( qw'perldoc -T -u -l', $name );
         my $cmdstr = join " ", \@cmd;
         my $run    = run(
             \@cmd,
