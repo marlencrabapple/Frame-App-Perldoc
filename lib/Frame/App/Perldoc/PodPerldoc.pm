@@ -10,7 +10,6 @@ use Pod::Simple::HTML;
 use IO::Handle::Common;
 use Path::Try;
 use Syntax::Keyword::Try;
-use Syntax::Keyword::Dynamically;
 
 my class PodPerldoc {
 
@@ -18,7 +17,7 @@ my class PodPerldoc {
     use Path::Try;
     use IO::Handle::Common;
     use IPC::Nosh;
-    use Syntax::Keyword::Try;
+    use Syntax::Keyword::Dynamically;
 
     field $file : reader : param;
     field $pod;
@@ -35,7 +34,9 @@ my class PodPerldoc {
 
         my @cmd    = ( qw'perldoc -T -u -l', $name );
         my $cmdstr = join " ", \@cmd;
-        my $run    = run(
+
+        # dynamically $ENV{PERLDOCDEBUG} = $ENV{DEBUG};
+        my $run = run(
             \@cmd,
             autochomp => 1,
             out       => sub ( $line, @ ) {

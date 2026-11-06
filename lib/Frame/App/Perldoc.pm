@@ -4,7 +4,7 @@ package Frame::App::Perldoc;
 
 our $VERSION = '0.01_1';
 
-class Frame::App::Perldoc : isa(Frame) : does(Frame::Base)
+class Frame::App::Perldoc : isa(Frame)
   : does(Frame::App::Perldoc::plenv) : does(Frame::App::Perldoc::PodPerldoc);
 
 use utf8;
@@ -19,16 +19,18 @@ use Syntax::Keyword::Defer;
 use URI::Escape 'uri_escape';
 use JSON::MaybeXS;
 use Digest::SHA;
+use Syntax::Keyword::Dynamically;
 
-field $json = JSON::MaybeXS->new( { utf8 => 1 } );
 field $req;
-field $html = {};
 field $uribase;
-field $xs : reader        = Text::Xslate->new( path => './view' );
-field $modlist_ord        = [];
-field $modlist : accessor = {};
+
+field $versionlist : accessor = {};
+field $modlist_ord            = [];
+field $modlist : accessor     = {};
+field $versionlist_ord        = [];
 
 field $cachedir;
+field $xs : reader = Text::Xslate->new( path => './view' );
 
 ADJUST : params (%param) {
     $cachedir = path(
@@ -37,12 +39,16 @@ ADJUST : params (%param) {
           . '-cache-'
           . Frame::Base::epoch
     );
+
     $cachedir->mkdir unless $cachedir->is_dir;
     $self->load_cache if path("$cachedir/modlist.json");
+
 };
 
 ADJUST {
-    $self->update_modlist( update => 1 );
+
+    $self->load_installed_perl;
+    dmsg $versionlist, $versionlist_ord
 }
 
 my method modinfo_clean ($modinfo) {
@@ -53,7 +59,9 @@ my method modinfo_clean ($modinfo) {
     $modinfo{file} = "$modinfo{file}" if $modinfo{file};
 
     $modinfo{cksum}{self} = Digest::SHA::sha256_hex(
-        $json->encode( [ map { ( $_ => $modinfo{$_} ) } sort keys %modinfo ] )
+        $self->json->encode(
+            [ map { ( $_ => $modinfo{$_} ) } sort keys %modinfo ]
+        )
     );
 
     # dmsg \%modinfo;
@@ -61,11 +69,23 @@ my method modinfo_clean ($modinfo) {
     \%modinfo;
 }
 
+method load_installed_perl {
+    push @$versionlist_ord, $self->plenv->versions;
+
+    %$versionlist = map {
+        my ( $verstr, $text ) = ( $_ =~ /^[\s*]+([^\s]+)(\s.+)?$/g );
+        $_ = $verstr;
+        dynamically $ENV{PLENV_VERSION} = $verstr;
+        $self->update_modlist( perlver => $verstr, update => 1 );
+        ( $verstr => { prefix => $self->plenv->prefix } )
+    } @$versionlist_ord;
+}
+
 method load_cache (%opt) {
     my $path = path("$cachedir/modlist.json");
     return undef unless $path->is_file;
 
-    my $json = $json->decode( $path->slurp_utf8 );
+    my $json = $self->json->decode( $path->slurp_utf8 );
 
     foreach my ( $pkgname, $modinfo ) (%$json) {
         $$modinfo{file} = path( $$modinfo{file} ) if $$modinfo{file};
@@ -188,12 +208,19 @@ method get_module ( $pkgname, %opt ) {
 
 method update_modlist (%opt) {
     my $write_modlist = delete $opt{write_modlist} // 1;
+
     $self->update_module(
         $_,
         pod2html => $ENV{WARMUP_POD2HTML},
         ( $opt{update} ? ( update_modlist => 1 ) : () ),
         ( write_modlist => !$write_modlist ), %opt
-    ) for $self->plenv->list_modules;
+      )
+      for (
+        $self->plenv->list_modules( $opt{perlver} ),
+        map { path($_)->basename }
+        map { ( $self->plenv->which( path($_)->basename ) ) }
+        $self->plenv->shims
+      );
 
     @$modlist_ord = sort keys %$modlist;
 
@@ -202,7 +229,7 @@ method update_modlist (%opt) {
 
 method write_cache_index (%opt) {
     path("$cachedir/modlist.json")->spew_utf8(
-        $json->encode(
+        $self->json->encode(
             {
                 map { ( $_ => modinfo_clean( $self, $$modlist{$_} ) ) }
                   keys %$modlist
@@ -222,10 +249,14 @@ method write_mod_cache ( $pkgname, %opt ) {
 }
 
 method render( $template, $data, %opt ) {
-    $xs->render(
+    my $currperl = $xs->render(
         $template,
         {
-            uribase => $uribase,
+            uribase  => $uribase,
+            modlist  => [ $modlist->@{@$modlist_ord} ],
+            currperl =>
+              { $ENV{PLENV_VERSION} => $$versionlist{ $ENV{PLENV_VERSION} } },
+            perllist => { $versionlist->%{@$versionlist_ord} },
             %$data
         }
     );
@@ -241,8 +272,7 @@ method modlist_page ($tx) {
     my $content = $self->app->render(
         'modlist.tx',
         {
-            title   => 'Module Index',
-            modlist => [ $modlist->@{@$modlist_ord} ]
+            title => 'Module Index'
         }
     );
 
@@ -380,6 +410,17 @@ method startup {
             $res;
         }
     );
+
+    my %perlver_route = ();
+
+    foreach my ( $ver, $info ) ( $versionlist->%{@$versionlist_ord} ) {
+        $perlver_route{$ver} = $r->under(
+            '/$ver',
+            sub ( $c, @arg ) {
+                dynamically $ENV{PLENV_VERSION} = $ver;
+            }
+        );
+    }
 
     my $doc = $r->under(
         '/' => sub ( $self, @arg ) {

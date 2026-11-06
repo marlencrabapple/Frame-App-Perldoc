@@ -1,8 +1,58 @@
 : include "part/header.tx"
 
+<nav class="navbar" role="navigation" aria-label="dropdown navigation">
+  <div class="navbar-start">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="<: $uribase :>">
+        Perldoc Viewer
+      </a>
+      <div class="navbar-burger js-burger" data-target="navbarExampleTransparentExample">
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
+
+    <div class="navbar-item has-dropdown is-hoverable">
+      <a class="navbar-link" href="<: $perllist[$currperl].prefix :>" title="<: $currperl.key :>">
+        <: $currperl.key() :>
+      </a>
+      <div class="navbar-dropdown">
+        : for $perllist.kv() -> $pair {
+        <a class="navbar-item" href="<: $pair.value.prefix :>" title="<: $pair.key :>">
+          <: $pair.key :>
+        </a>
+        : }
+      </div>
+    </div>
+  </div>
+
+  <div class="navbar-item has-dropdown is-hoverable" href="<: $uribase :>/perltoc">
+    <a class="navbar-link">Documentation</a>
+    <div class="navbar-dropdown">
+
+    </div>
+  </div>
+
+  <div class="navbar-item has-dropdown is-hoverable" href="<: $uribase :>/perltoc">
+    <a class="navbar-link">Module List</a>
+    <div class="navbar-dropdown">
+
+    </div>
+  </div>
+
+  <div class="navbar-end">
+    <div class="navbar-item ">
+      <input class="input" type="text" placeholder="Package::Name, Dist-Name, AUTHOR, binary, perltoc, ..." />
+    </div>
+
+  </div>
+</nav>
+
 <section class="section">
   <div class="container">
-: block content -> {}
+    : block content -> {}
   </div>
 </section>
 
