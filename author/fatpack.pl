@@ -17,7 +17,7 @@ use IO::Handle::Common;
 
 our $modroot  = path(abs_path);
 our @input    = ( path("$modroot/script")->children );
-our $outdir   = path('./fatpack');
+our $outdir   = path('./bin');
 our $outfn    = '%s';
 our $locallib = path("$modroot/local");
 our $verbose  = 1;
@@ -69,7 +69,7 @@ GetOptions(
     },
     'outfn|outfname|out-filename|fnfmt|fmtfn|fmt-filename|fmt-outputfn=s',
     'modroot|module-root|module-dir=s',
-    'locallib|I=s@',
+    'locallib=s@',
     'verbose+',
     'debug',
     '<>' => sub ($in) { $patharg->( $in, dest => \@input ) }
@@ -90,6 +90,7 @@ sub fatpack {
 
     $outdir->mkdir unless $outdir->is_dir;
     dmsg(@input);
+
     foreach my $in ( map { $_->is_dir ? ( $_->children ) : $_ } @input ) {
 
         #fatpack($in->children) if $in->is_dir;

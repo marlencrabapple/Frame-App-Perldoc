@@ -1,3 +1,4 @@
+#!/usr/bin/env perl
 use Object::Pad ':experimental(:all)';
 
 package perldoc_pl;

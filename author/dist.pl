@@ -90,8 +90,10 @@ sub make_dist( $dist, %opt ) {
         mvdir( $bindir, $tmp );
 
     }
+    dmsg $dist;
 
-    const my $archive_re => qr/^Wrote (($dist)-(.+?)(?:-(TRIAL))?\.tar\.gz)$/;
+    const my $archive_re =>
+      qr/^Wrote (($dist)-([0-9\._]+)(?:-(TRIAL))?\.tar\.gz)$/;
 
     my $run = run(
         [qw'minil dist'],
@@ -123,6 +125,7 @@ sub make_dist( $dist, %opt ) {
           . $run->status )
       if $run->status != 0;
 
+    dmsg( $archive, $version, $has_suffix );
     fatal "Could not parse archive name from '"
       . ( join " ", $run->cmd->@* )
       . "' output."

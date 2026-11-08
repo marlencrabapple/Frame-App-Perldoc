@@ -16,7 +16,7 @@
 
     <div class="navbar-item has-dropdown is-hoverable">
       <a class="navbar-link" href="<: $perllist[$currperl].prefix :>" title="<: $currperl.key :>">
-        <: $currperl.key() :>
+        <: $currperl.key :>
       </a>
       <div class="navbar-dropdown">
         : for $perllist.kv() -> $pair {

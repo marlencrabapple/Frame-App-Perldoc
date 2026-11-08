@@ -2,7 +2,7 @@ use Object::Pad ':experimental(:all)';
 
 package Frame::App::Perldoc;
 
-our $VERSION = '0.01_1';
+our $VERSION = '0.01_02';
 
 class Frame::App::Perldoc : isa(Frame)
   : does(Frame::App::Perldoc::plenv) : does(Frame::App::Perldoc::PodPerldoc);
@@ -14,7 +14,7 @@ use Const::Fast;
 use Path::Try;
 use IO::Handle::Common;
 use Text::Xslate;
-use List::Util qw'uniq';
+use List::Util qw'uniq any all';
 use Syntax::Keyword::Defer;
 use URI::Escape 'uri_escape';
 use JSON::MaybeXS;
@@ -64,8 +64,6 @@ my method modinfo_clean ($modinfo) {
         )
     );
 
-    # dmsg \%modinfo;
-
     \%modinfo;
 }
 
@@ -75,8 +73,11 @@ method load_installed_perl {
     %$versionlist = map {
         my ( $verstr, $text ) = ( $_ =~ /^[\s*]+([^\s]+)(\s.+)?$/g );
         $_ = $verstr;
+
         dynamically $ENV{PLENV_VERSION} = $verstr;
+
         $self->update_modlist( perlver => $verstr, update => 1 );
+
         ( $verstr => { prefix => $self->plenv->prefix } )
     } @$versionlist_ord;
 }
@@ -106,7 +107,7 @@ method load_cache (%opt) {
                   . " Got: "
                   . $htmlcache->digest . ')';
 
-                dmsg $pkgname, $modinfo, $htmlcache;
+                # dmsg $pkgname, $modinfo, $htmlcache;
             }
 
         }
@@ -117,16 +118,26 @@ method update_module ( $pkgname, %opt ) {
     $self->get_module( $pkgname, update => true, %opt );
 }
 
-method get_module ( $pkgname, %opt ) {
+method get_module ( $name, %opt ) {
     ( $opt{update_html} = $opt{update_perldoc} ) //= $opt{write_html} //=
       $opt{update_html} //= $opt{update_perldoc} //= $opt{update} //=
       !$ENV{NO_CACHE} // false;
 
-    my $pod2html;
-    my $modinfo = $$modlist{$pkgname} // {};
+    my $modinfo = {};
+
+    # const my $pkgname_dist_re => qr/([a-z0-9]+)(\-|::)?$/i;
+
+    my @parts = split /(::|-|\/)/, $name;
+
+    if ( all { /^[a-z0-9_]+$/ } (@parts) ) {
+        $$modinfo{distname} = join '-',  @parts;
+        $$modinfo{package}  = join '::', @parts;
+    }
+
+    $modinfo = { %$modinfo, ( $modlist->{ $$modinfo{distname} } // {} )->%* };
 
     if ( $opt{update_perldoc} || !$$modinfo{file} ) {
-        my $perldoc = $self->perldoc->module( $pkgname, %opt );
+        my $perldoc = $self->perldoc->module( $$modinfo{distname}, %opt );
 
         if (
             !$perldoc->isa(
@@ -134,13 +145,20 @@ method get_module ( $pkgname, %opt ) {
           )
         {
             if ( $perldoc->isa('IPC::Nosh') ) {
-                error "Failed to get perldoc for $pkgname: " . join " ",
-                  $perldoc->err->lines_utf8;
+                my $status = $perldoc->status;
+                error "Failed to get perldoc for $$modinfo{package}"
+                  . (
+                    scalar $perldoc->err->lines_utf8
+                    ? ": "
+                      . ( join " ", $perldoc->err->lines_utf8 )
+                      . "($status)"
+                    : "\nExited with $status"
+                  );
 
             }
             else {
                 error
-"Unknown error encountered trying to fetch perldoc for $pkgname";
+"Unknown error encountered trying to fetch perldoc for $$modinfo{package}";
             }
 
             return undef;
@@ -148,11 +166,11 @@ method get_module ( $pkgname, %opt ) {
 
         $modinfo = {
             %$modinfo,
-            name    => $pkgname,
-            file    => $perldoc->file,
-            cksum   => { file => $perldoc->file->digest },
-            perldoc => $perldoc,
-            url     => "$ENV{SITE_URL}/" . uri_escape("$pkgname")
+            file  => $perldoc->file,
+            cksum => { file => $perldoc->file->digest },
+
+            # perldoc => $perldoc,
+            url => "$ENV{SITE_URL}/$$modinfo{distname}"
         };
     }
 
@@ -165,8 +183,6 @@ method get_module ( $pkgname, %opt ) {
         )
       )
     {
-
-        # $$modinfo{htmlstr} //= "";
         $modinfo = { %$modinfo, $self->html( $$modinfo{file} )->%* };
 
         $$modinfo{cksum}{html} =
@@ -176,13 +192,13 @@ method get_module ( $pkgname, %opt ) {
 
     my $modified;
 
-    if ( my $modinfo_curr = $$modlist{$pkgname} ) {
+    if ( my $modinfo_curr = $$modlist{ $$modinfo{distname} } ) {
         my $modinfo_clean = modinfo_clean( $self, $modinfo );
 
         if (  !$$modinfo_curr{cksum}
             || $$modinfo_curr{cksum} ne $$modinfo_clean{cksum} )
         {
-            $$modlist{$pkgname} = $modinfo
+            $$modlist{ $$modinfo{distname} } = $modinfo
               if $opt{update_modlist}
               || ( !defined $opt{update_modlist} || $opt{update_modlist} );
 
@@ -192,13 +208,13 @@ method get_module ( $pkgname, %opt ) {
     }
     else {
         $modified = modinfo_clean( $self, $modinfo );
-        $$modlist{$pkgname} = $modinfo;
+        $$modlist{ $$modinfo{distname} } = $modinfo;
     }
 
     # dmsg $modified, \%opt;
 
     if ($modified) {
-        $self->write_mod_cache( $pkgname, update => 1 )
+        $self->write_mod_cache( $$modinfo{distname}, update => 1 )
           if $opt{write_html};
         $self->write_cache_index if $opt{write_modlist};
     }
@@ -209,6 +225,8 @@ method get_module ( $pkgname, %opt ) {
 method update_modlist (%opt) {
     my $write_modlist = delete $opt{write_modlist} // 1;
 
+    dynamically $ENV{PLENV_VERSION} = $opt{perlver};
+
     $self->update_module(
         $_,
         pod2html => $ENV{WARMUP_POD2HTML},
@@ -216,8 +234,8 @@ method update_modlist (%opt) {
         ( write_modlist => !$write_modlist ), %opt
       )
       for (
-        $self->plenv->list_modules( $opt{perlver} ),
-        map { path($_)->basename }
+
+        $self->plenv->list_modules( $opt{perlver} ), map { path($_)->basename }
         map { ( $self->plenv->which( path($_)->basename ) ) }
         $self->plenv->shims
       );
@@ -238,9 +256,9 @@ method write_cache_index (%opt) {
     );
 }
 
-method write_mod_cache ( $pkgname, %opt ) {
-    my $modinfo       = $$modlist{$pkgname};
-    my $modinfo_clean = modinfo_clean( $self, $$modlist{$pkgname} );
+method write_mod_cache ( $distname, %opt ) {
+    my $modinfo       = $$modlist{$distname};
+    my $modinfo_clean = modinfo_clean( $self, $$modlist{$distname} );
 
     path("$cachedir/$$modinfo_clean{cksum}.html")
       ->spew_utf8( $$modinfo{htmlstr} )
@@ -426,6 +444,7 @@ method startup {
         '/' => sub ( $self, @arg ) {
             $uribase = $self->req->script_name;
             return $app->perl_index($self) if $self->req->path_info eq '/';
+
             1;
         }
     );
@@ -438,7 +457,13 @@ method startup {
 
     $doc->get(
         '/:name' => sub ( $self, $name //= 'perl' ) {
-            $app->perldoc_page( $self, $name );
+            my $res = $app->perldoc_page( $self, $name );
+
+            # if($res->status == 200) {
+            #     $doc->get("/$name"
+            # }
+
+            $res;
         }
     );
 

@@ -45,7 +45,7 @@
             "Adjust::Params" : "0.01_06",
             "Const::Fast" : "0",
             "Frame" : "0.01_08",
-            "IO::Handle::Common" : "0.01_06",
+            "IO::Handle::Common" : "0.01_07",
             "IPC::Nosh" : "0.01_04",
             "JSON::MaybeXS" : "0",
             "Path::Try" : "0.01_03",
@@ -59,7 +59,7 @@
       }
    },
    "release_status" : "unstable",
-   "version" : "0.01_1",
+   "version" : "0.01_02",
    "x_contributors" : [
       "Ian P Bradley <ian.bradley@studiocrabapple.com>"
    ],

@@ -1,7 +1,7 @@
 use Object::Pad ':experimental(:all)';
 
 package Frame::App::Perldoc::Base;
-role Frame::App::Perldoc::Base : does(Frame::Util);
+role Frame::App::Perldoc::Base : does(Frame::Util) : does(Frame::Base);
 
 use utf8;
 use v5.44;
@@ -10,9 +10,9 @@ use Path::Try;
 use IO::Handle::Common;
 use IPC::Nosh;
 
-# use vars qw'@EXPORT';
+use vars qw'@EXPORT';
 
-# @EXPORT = qw'epoch dmsg hash';
+@EXPORT = qw'epoch dmsg hash';
 
 APPLY($class_mop) {
     Frame::Base->apply($class_mop)
